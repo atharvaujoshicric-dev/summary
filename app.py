@@ -122,9 +122,9 @@ def extract_area_logic(text):
 
 def determine_config(area_sqft, t1, t2, t3):
     if area_sqft == 0: return "N/A"
-    if area_sqft < t1: return "1 BHK"
-    elif area_sqft < t2: return "2 BHK"
-    elif area_sqft < t3: return "3 BHK"
+    if area_sqft <= t1: return "1 BHK"
+    elif area_sqft <= t2: return "2 BHK"
+    elif area_sqft <= t3: return "3 BHK"
     else: return "4 BHK"
 
 # In your main app loop:
