@@ -127,6 +127,9 @@ def determine_config(area_sqft, t1, t2, t3):
     elif area_sqft < t3: return "3 BHK"
     else: return "4 BHK"
 
+# In your main app loop:
+df['Configuration'] = df['Carpet Area (SQ.FT)'].apply(lambda x: determine_config(x, t1, t2, t3))
+
 def apply_excel_formatting(df, writer, sheet_name, is_summary=True):
     df.to_excel(writer, sheet_name=sheet_name, index=False)
     worksheet = writer.sheets[sheet_name]
