@@ -64,26 +64,24 @@ def extract_area_logic(text):
     m_unit = r'(?:चौरस\s*मी(?:[टत]र)?|चौ[\.\s]*मी[\.\s]*|चाै[\.\s]*मी[\.\s]*|sq\.?\s*m(?:tr)?\.?|square\s*meter(?:s)?)(?:\s*कार्?पेट)?(?:\s*एरिया|area)?'
     f_unit = r'(?:चौरस\s*फु[टत]|चौरस\s*फू[टत]|चौ[\.\s]*फू|sq\.?\s*f(?:t)?\.?|square\s*f(?:ee|oo)t)(?:\s*area)?'
     
-    # 3. Context Filtering (Discard initial land details)
+    # 3. Context Filtering
     start_keywords = r'(?:इमारतीमधील|गृहप्रकल्पातील|प्रकल्पातील|योजनेतील|नियोजित|प्रोजेक्ट|प्रोजेक्टमधील|बिल्डींग|इमारत|मिळकतीवर|मिळकतीवरील|प्रकलप|प्रकल्पात|फ्लॅट|अपार्टमेंट)'
     parts = re.split(start_keywords, text, flags=re.IGNORECASE)
     relevant_text = " ".join(parts[1:]) if len(parts) > 1 else text
 
-    # 4. Explicit Total Area Priority (Handles "असे एकूण क्षेत्र")
+    # 4. Explicit Total Area Priority
     total_markers = r'(?:एकूण|असे एकूण|टोटल|total)\s*क्षेत्र'
     total_match = re.search(rf'{total_markers}\s*(?:क्षेत्र\s*)?(\d+\.?\d*)\s*{m_unit}', relevant_text, re.IGNORECASE)
     if total_match:
         return round(float(total_match.group(1)), 3)
 
-    # 5. Metric Summation (Components: Flat + Balcony + Terrace)
+    # 5. Metric Summation
     exclude_keywords = ["पार्किंग", "पार्कींग", "parking", "road", "reserve", "राखीव", "प्लॉट", "plot", "साईज", "size"]
     m_vals = []
     
     for match in re.finditer(rf'(\d+\.?\d*)\s*{m_unit}', relevant_text, re.IGNORECASE):
         val = float(match.group(1))
         ctx_before = relevant_text[max(0, match.start()-60):match.start()].lower()
-        
-        # RERA duplicate check
         bracket_ctx = relevant_text[max(0, match.start()-100):match.start()]
         is_rera_dup = "(" in bracket_ctx and "रेरा" in bracket_ctx and ")" not in bracket_ctx
         
@@ -96,7 +94,7 @@ def extract_area_logic(text):
             m_vals.sort()
             largest = m_vals[-1]
             others_sum = sum(m_vals[:-1])
-            if abs(largest - others_sum) < 1.0: # Tolerance for rounding
+            if abs(largest - others_sum) < 1.0:
                 return round(largest, 3)
         return round(sum(m_vals), 3)
 
@@ -126,9 +124,6 @@ def determine_config(area_sqft, t1, t2, t3):
     elif area_sqft <= t2: return "2 BHK"
     elif area_sqft <= t3: return "3 BHK"
     else: return "4 BHK"
-
-# In your main app loop:
-df['Configuration'] = df['Carpet Area (SQ.FT)'].apply(lambda x: determine_config(x, t1, t2, t3))
 
 def apply_excel_formatting(df, writer, sheet_name, is_summary=True):
     df.to_excel(writer, sheet_name=sheet_name, index=False)
@@ -174,12 +169,12 @@ def apply_excel_formatting(df, writer, sheet_name, is_summary=True):
                     worksheet.merge_cells(start_row=start_row_loc, start_column=1, end_row=i-1, end_column=1)
                 start_row_loc = i
 
-# --- STREAMLIT UI ---
+# --- STREAMLIT UI SETUP ---
 st.set_page_config(page_title="Spydarr Dashboard", layout="wide")
 st.title("Spydarr Dashboard")
 st.divider()
 
-# Thresholds from Sidebar
+# Thresholds from Sidebar (Defined here so they are available for the logic below)
 st.sidebar.header("Calculation Settings")
 loading_factor = st.sidebar.number_input("Loading Factor", min_value=1.0, value=1.35, step=0.001, format="%.3f")
 t1 = st.sidebar.number_input("1 BHK Threshold (SQ.FT)", value=600)
@@ -187,7 +182,9 @@ t2 = st.sidebar.number_input("2 BHK Threshold (SQ.FT)", value=850)
 t3 = st.sidebar.number_input("3 BHK Threshold (SQ.FT)", value=1100)
 
 uploaded_file = st.file_uploader("Upload Data File", type=["xlsx", "csv"])
+
 if uploaded_file:
+    # Load Data
     df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
     clean_cols = {c.lower().strip(): c for c in df.columns}
     
@@ -199,19 +196,23 @@ if uploaded_file:
     
     if desc_col and cons_col and prop_col and date_col and loc_col:
         with st.spinner('Calculating...'):
+            # 1. Area Extraction
             df['Carpet Area (SQ.MT)'] = df[desc_col].apply(extract_area_logic)
             df['Carpet Area (SQ.FT)'] = (df['Carpet Area (SQ.MT)'] * 10.764).round(3)
             df['Saleable Area'] = (df['Carpet Area (SQ.FT)'] * loading_factor).round(3)
+            
+            # 2. APR Calculation
             df['APR'] = df.apply(lambda r: round(r[cons_col]/r['Saleable Area'], 3) if r['Saleable Area'] > 0 else 0, axis=1)
             
-            # Use dynamic thresholds for Config
+            # 3. Configuration Mapping (Using sidebar thresholds)
             df['Configuration'] = df['Carpet Area (SQ.FT)'].apply(lambda x: determine_config(x, t1, t2, t3))
             
+            # 4. Processing & Sorting
             df[date_col] = pd.to_datetime(df[date_col], errors='coerce')
-            
             valid_df = df[df['Carpet Area (SQ.FT)'] > 0].sort_values([loc_col, prop_col, 'Configuration', 'Carpet Area (SQ.FT)'])
-            project_counts = valid_df.groupby(prop_col).size().reset_index(name='Total Count')
             
+            # 5. Summary Aggregation
+            project_counts = valid_df.groupby(prop_col).size().reset_index(name='Total Count')
             summary = valid_df.groupby([loc_col, prop_col, 'Configuration', 'Carpet Area (SQ.FT)']).agg(
                 Last_Date=(date_col, 'max'),
                 Min_APR=('APR', 'min'), 
@@ -222,22 +223,27 @@ if uploaded_file:
             ).reset_index()
             
             summary = summary.merge(project_counts, on=prop_col, how='left')
-            summary['Last_Date'] = pd.to_datetime(summary['Last_Date'], errors='coerce')
-            summary['Last_Date'] = summary['Last_Date'].apply(lambda x: x.strftime('%b-%Y') if pd.notnull(x) else "N/A")
+            summary['Last_Date'] = pd.to_datetime(summary['Last_Date'], errors='coerce').apply(lambda x: x.strftime('%b-%Y') if pd.notnull(x) else "N/A")
             
             summary.columns = ['Location', 'Property', 'Configuration', 'Carpet Area(SQ.FT)', 'Last Completion Date', 'Min. APR', 'Max APR', 'Average of APR', 'Median of APR', 'Count of Property', 'Total Count']
             summary = summary[['Location', 'Property', 'Last Completion Date', 'Configuration', 'Carpet Area(SQ.FT)', 'Min. APR', 'Max APR', 'Average of APR', 'Median of APR', 'Count of Property', 'Total Count']]
 
+            # 6. Excel Generation
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 apply_excel_formatting(df, writer, 'Raw Data', is_summary=False)
                 apply_excel_formatting(summary, writer, 'Summary', is_summary=True)
             
             st.success("Analysis Complete!")
-            recipient = st.text_input("Recipient Name", placeholder="firstname.lastname")
-            if st.button("Send to Email") and recipient:
-                full_email = f"{recipient.strip().lower()}@beyondwalls.com"
-                if send_email(full_email, output.getvalue(), "Spydarr_Market_Summary.xlsx"):
-                    st.success(f"Report sent to {full_email}")
+            
+            # 7. Email Section
+            recipient = st.text_input("Recipient Name (for beyondwalls.com)", placeholder="firstname.lastname")
+            if st.button("Send to Email"):
+                if recipient:
+                    full_email = f"{recipient.strip().lower()}@beyondwalls.com"
+                    if send_email(full_email, output.getvalue(), "Spydarr_Market_Summary.xlsx"):
+                        st.success(f"Report sent to {full_email}")
+                else:
+                    st.warning("Please enter a recipient name first.")
     else:
-        st.error("Missing required columns: Micromarket, Property Description, Consideration Value, Property, Completion Date.")
+        st.error("Missing required columns in uploaded file. Check for: Micromarket, Property Description, Consideration Value, Property, and Completion Date.")
