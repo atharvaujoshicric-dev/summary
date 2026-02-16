@@ -237,7 +237,7 @@ if uploaded_file:
             st.success("Analysis Complete!")
             
             # 7. Email Section
-            recipient = st.text_input("Recipient Name (for beyondwalls.com)", placeholder="firstname.lastname")
+            recipient = st.text_input("Recipient Name", placeholder="firstname.lastname")
             if st.button("Send to Email"):
                 if recipient:
                     full_email = f"{recipient.strip().lower()}@beyondwalls.com"
