@@ -62,40 +62,51 @@ def extract_area_logic(text):
     text = re.sub(r'(\d+\.\d+)\.', r'\1', text)
     text = re.sub(r'(\d+\.?)\s+(\d+)', r'\1\2', text) 
     text = re.sub(r'(\d),(\d)', r'\1\2', text) 
-    
-    # Neutralize parking dimensions (e.g., 2.3 x 4.5)
     text = re.sub(r'\d+\.?\d*\s*[\*x]\s*\d+\.?\d*', 'PARKING_DIM', text)
 
-    # 2. UNIT PATTERNS: Broadened to handle collapsed text and spelling variations
-    m_unit = r'(?:चौरस\s*मी(?:[टत]र)?|चौ[\.\s]*मी[\.\s]*|चाै[\.\s]*मी[\.\s]*|sq\.?\s*m(?:tr)?\.?|square\s*meter(?:s)?)(?:\s*कारपेट|कार्पेट)?(?:\s*एरिया|area)?'
-    f_unit = r'(?:चौरस\s*फु[टत]|चौरस\s*फू[टत]|चौ[\.\s]*फु[टत]?|चौ[\.\s]*फू[टत]?|sq\.?\s*f(?:t)?\.?|square\s*f(?:ee|oo)t)(?:\s*area)?'
+    # 2. UNIT PATTERNS
+    # Enhanced to prioritize "एकूण क्षेत्र" when it appears in the flat context
+    m_unit = r'(?:चौरस\s*मी(?:[टत]र)?|चौ[\.\s]*मी[\.\s]*|चाै[\.\s]*मी[\.\s]*|sq\.?\s*m(?:tr)?\.?|square\s*meter(?:s)?)(?:\s*(?:कारपेट|कार्पेट|चटई क्षेत्र|एकूण क्षेत्र))?(?:\s*(?:एरिया|area|क्षेत्र))?'
+    f_unit = r'(?:चौरस\s*फु[टत]|चौरस\s*फू[टत]|चौ[\.\s]*फु[टत]?|चौ[\.\s]*फू[टत]?|sq\.?\s*f(?:t)?\.?|square\s*f(?:ee|oo)t)(?:\s*(?:area|क्षेत्र))?'
     
-    # 3. FOCUS LOGIC: Ignore land areas before the unit description begins
-    # Split text at project-start markers and take everything after the first split.
-    boundary_keywords = r'(?:येथील|मिळकतीवर|मिळकतीवरील|बांधण्यात|बांधत|प्रकल्पातील|गृहप्रकल्पातील|इमारतप्रकल्पातील|योजनेतील|नियोजित)'
+    # 3. FOCUS LOGIC: Isolate unit details from land stats
+    boundary_keywords = r'(?:येथील|मिळकतीवर|मिळकतीवरील|बांधण्यात|बांधत|प्रकल्पातील|गृहप्रकल्पातील|इमारतप्रकल्पातील|योजनेतील|नियोजित|इमारतीमधील|बिल्डींग|बिल्डिंग|प्रकल्प|टावर|टॉवर|प्रिस्टीन|सेक्टर|क्लस्टर)'
     parts = re.split(boundary_keywords, text, flags=re.IGNORECASE)
     relevant_text = " ".join(parts[1:]) if len(parts) > 1 else text
 
-    exclude_keywords = ["पार्किंग", "पार्कींग", "parking", "road", "reserve", "राखीव", "प्लॉट", "plot", "वाढीव", "पैकी", "अविभक्त", "साईज", "size", "बिल्डअप", "मुल्यांकन", "दर", "rate", "७/१२", "एकूण क्षेत्र", "नाकाश"]
+    # "एकूण क्षेत्र" is removed from here so it can be captured in the flat description
+    exclude_keywords = ["पार्किंग", "पार्कींग", "parking", "road", "reserve", "राखीव", "प्लॉट", "plot", "वाढीव", "पैकी", "अविभक्त", "साईज", "size", "बिल्डअप", "मुल्यांकन", "दर", "rate", "७/१२", "नाकाश"]
     
-    # 4. METRIC SUMMATION (Primary)
+    # 4. METRIC SUMMATION
     m_vals = []
+    # Logic to identify if a number is specifically labeled as "एकूण क्षेत्र" (Total Area)
+    total_area_found = None
+
     for match in re.finditer(rf'(\d+\.?\d*)\s?{m_unit}', relevant_text, re.IGNORECASE):
         val = float(match.group(1))
+        full_match_text = match.group(0).lower()
         start_idx = match.start()
         context_before = relevant_text[max(0, start_idx-60):start_idx].lower()
+        bracket_context = relevant_text[max(0, start_idx-150):start_idx]
         
         # Avoid duplicate Rera mentions in brackets
-        bracket_context = relevant_text[max(0, start_idx-150):start_idx]
         is_rera_duplicate = "(" in bracket_context and "रेरा" in bracket_context and ")" not in bracket_context
         
         if not any(word in context_before for word in exclude_keywords):
             if 2.0 <= val < 900 and not is_rera_duplicate:
+                # NEW: If "एकूण क्षेत्र" is explicitly mentioned with this number, prioritize it
+                if "एकूण क्षेत्र" in context_before or "एकूण क्षेत्र" in full_match_text:
+                    total_area_found = val
+                
                 if not m_vals or val != m_vals[-1]:
                     m_vals.append(val)
             
+    # PRIORITY 1: If an explicit "Total Area" (एकूण क्षेत्र) was found in the flat context, use it
+    if total_area_found:
+        return round(total_area_found, 3)
+
+    # PRIORITY 2: Validation summation
     if m_vals:
-        # VALIDATION: Check if any number is the sum of previous numbers (identify stated total)
         if len(m_vals) > 1:
             for i in range(1, len(m_vals)):
                 if abs(m_vals[i] - sum(m_vals[:i])) < 1.0:
@@ -107,7 +118,7 @@ def extract_area_logic(text):
     for match in re.finditer(rf'(\d+\.?\d*)\s?{f_unit}', relevant_text, re.IGNORECASE):
         val = float(match.group(1))
         start_idx = match.start()
-        context_before = relevant_text[max(0, start_idx-60):start_idx].lower()
+        context_before = relevant_text[max(0, match.start()-60):start_idx].lower()
         if not any(word in context_before for word in exclude_keywords):
             if 20.0 <= val < 9000:
                 if not f_vals or val != f_vals[-1]:
