@@ -78,7 +78,7 @@ def extract_area_logic(text):
     exclude_keywords = ["पार्किंग", "पार्कींग", "parking", "road", "reserve", "राखीव", "प्लॉट", "plot", "वाढीव", "पैकी", "अविभक्त", "साईज", "size", "बिल्डअप", "मुल्यांकन", "दर", "rate", "७/१२", "नाकाश"]
     
     # 4. METRIC SUMMATION
-     m_vals = []
+    m_vals = []
     for match in re.finditer(rf'(\d+\.?\d*)\s?{m_unit}', relevant_text, re.IGNORECASE):
         val = float(match.group(1))
         start_idx = match.start()
