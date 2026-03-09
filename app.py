@@ -79,22 +79,22 @@ def extract_area_logic(text):
     
     # 4. METRIC SUMMATION
      m_vals = []
-    for match in re.finditer(rf'(\d+\.?\d*)\s?{m_unit}', relevant_text, re.IGNORECASE):
-        val = float(match.group(1))
-        start_idx = match.start()
-        context_before = relevant_text[max(0, start_idx-60):start_idx].lower()
-        bracket_context = relevant_text[max(0, start_idx-150):start_idx]
-        is_rera_duplicate = "(" in bracket_context and "रेरा" in bracket_context and ")" not in bracket_context
-        
-        if not any(word in context_before for word in exclude_keywords):
-            # Allow small values (balcony, utility etc.) only as additive components
-            # Primary threshold: 2.0, but allow >=0.5 if clearly an area component
-            is_small_component = 0.5 <= val < 2.0 and any(
-                kw in context_before for kw in ["बाल्कनी", "balcony", "युटिलिटी", "utility", "टेरेस", "terrace", "लगतचे", "ओपन"]
-            )
-            if (2.0 <= val < 900 or is_small_component) and not is_rera_duplicate:
-                if not m_vals or val != m_vals[-1]:
-                    m_vals.append(val)
+        for match in re.finditer(rf'(\d+\.?\d*)\s?{m_unit}', relevant_text, re.IGNORECASE):
+            val = float(match.group(1))
+            start_idx = match.start()
+            context_before = relevant_text[max(0, start_idx-60):start_idx].lower()
+            bracket_context = relevant_text[max(0, start_idx-150):start_idx]
+            is_rera_duplicate = "(" in bracket_context and "रेरा" in bracket_context and ")" not in bracket_context
+            
+            if not any(word in context_before for word in exclude_keywords):
+                # Allow small values (balcony, utility etc.) only as additive components
+                # Primary threshold: 2.0, but allow >=0.5 if clearly an area component
+                is_small_component = 0.5 <= val < 2.0 and any(
+                    kw in context_before for kw in ["बाल्कनी", "balcony", "युटिलिटी", "utility", "टेरेस", "terrace", "लगतचे", "ओपन"]
+                )
+                if (2.0 <= val < 900 or is_small_component) and not is_rera_duplicate:
+                    if not m_vals or val != m_vals[-1]:
+                        m_vals.append(val)
             
     if m_vals:
         # Cross-check if any value is the stated total of others
