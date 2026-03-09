@@ -78,7 +78,7 @@ def extract_area_logic(text):
     exclude_keywords = ["पार्किंग", "पार्कींग", "parking", "road", "reserve", "राखीव", "प्लॉट", "plot", "वाढीव", "पैकी", "अविभक्त", "साईज", "size", "बिल्डअप", "मुल्यांकन", "दर", "rate", "७/१२", "नाकाश"]
     
     # 4. METRIC SUMMATION
-    m_vals = []
+     m_vals = []
     for match in re.finditer(rf'(\d+\.?\d*)\s?{m_unit}', relevant_text, re.IGNORECASE):
         val = float(match.group(1))
         start_idx = match.start()
@@ -87,7 +87,12 @@ def extract_area_logic(text):
         is_rera_duplicate = "(" in bracket_context and "रेरा" in bracket_context and ")" not in bracket_context
         
         if not any(word in context_before for word in exclude_keywords):
-            if 2.0 <= val < 900 and not is_rera_duplicate:
+            # Allow small values (balcony, utility etc.) only as additive components
+            # Primary threshold: 2.0, but allow >=0.5 if clearly an area component
+            is_small_component = 0.5 <= val < 2.0 and any(
+                kw in context_before for kw in ["बाल्कनी", "balcony", "युटिलिटी", "utility", "टेरेस", "terrace", "लगतचे", "ओपन"]
+            )
+            if (2.0 <= val < 900 or is_small_component) and not is_rera_duplicate:
                 if not m_vals or val != m_vals[-1]:
                     m_vals.append(val)
             
